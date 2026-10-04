@@ -18,8 +18,10 @@ Event registration is handled externally through Unstop. The custom DDC platform
 - Persistent participant topbar across dashboard, challenges, challenge detail, submissions, leaderboard, and rules routes.
 - Server-side starting-challenge assignment that is saved and remains stable on refresh or concurrent starts.
 - Logout that invalidates the server session.
+- Timed CTF: a global event window (UPCOMING / LIVE / ENDED) gates challenge starts and flag submissions server-side, while each participant's own per-challenge clock (`started_at` → `solved_at`) decides points.
+- Time-decay scoring persisted at solve time, an auditable score ledger, and a real leaderboard.
 
-Five challenges are playable inside the participant shell: WEB-101 — Ghost 404 (source/storage/archive investigation) and WEB-102 — Wrong Key, Right State (participant-seeded browser-state puzzle). Their shared submission flow validates on the server, records attempts privately, and persists the first solve. Scoring, further challenge environments, hints and penalties, leaderboard calculations, password recovery, admin tooling, and Unstop-to-platform account provisioning are not implemented yet. FORENSICS-103 — Cold Boot: Shattered Cache is a static memory-image investigation reached through NEXT CHALLENGE. CRYPTO-104 — Dead Drop 64: Receiver’s Copy serves a privately prebuilt evidence archive, also reached through NEXT CHALLENGE ([setup notes](docs/CRYPTO104.md)). CRYPTO-105 — Shift Change is a medium static evidence challenge built the same way ([setup notes](docs/CRYPTO105.md)). Organizer solution notes are kept outside this public repository.
+Five challenges are playable inside the participant shell: WEB-101 — Ghost 404 (source/storage/archive investigation) and WEB-102 — Wrong Key, Right State (participant-seeded browser-state puzzle). Their shared submission flow validates on the server, records attempts privately, and persists the first solve. Further challenge environments, hints and penalties, password recovery, admin tooling, and Unstop-to-platform account provisioning are not implemented yet. FORENSICS-103 — Cold Boot: Shattered Cache is a static memory-image investigation reached through NEXT CHALLENGE. CRYPTO-104 — Dead Drop 64: Receiver’s Copy serves a privately prebuilt evidence archive, also reached through NEXT CHALLENGE ([setup notes](docs/CRYPTO104.md)). CRYPTO-105 — Shift Change is a medium static evidence challenge built the same way ([setup notes](docs/CRYPTO105.md)). Organizer solution notes are kept outside this public repository.
 
 ## Tech stack
 
@@ -51,7 +53,7 @@ docs/                 participant platform setup and deployment notes
 /challenges               Protected challenge catalogue
 /challenges/:challengeId Protected assigned challenge route
 /submissions              Flag entry and private attempt history
-/leaderboard              Protected leaderboard placeholder
+/leaderboard              Protected live/final standings
 /rules                    Protected rules placeholder
 ```
 
@@ -67,6 +69,7 @@ POST /api/challenges/start
 POST /api/challenges/next
 GET  /api/submissions
 POST /api/submissions
+GET  /api/leaderboard
 ```
 
 ## Authentication
@@ -86,6 +89,37 @@ Login → Dashboard → Start Challenge
 
 Migration `0002_web101.sql` publishes WEB-101 as a starting challenge. Its inspectable HTML environment is playable after configuring the private server-side flag. Migration `0004_submissions.sql` adds attempt history and submission throttling. Participants can submit through `/submissions?challenge=WEB-101`; correctness is checked against the server secret and the first solve persists atomically with the attempt. Scoring remains future work. Migration 0006_challenge_progression.sql preserves assignments while enabling multiple completed challenges and one current challenge per participant. Solves show completion; explicit NEXT CHALLENGE selects another eligible unsolved challenge server-side. Existing participant assignments are preserved by migrations and refreshes. Migration `0007_forensics103.sql` adds FORENSICS-103 as an active non-starting challenge; its evidence image is generated server-side from `FORENSICS103_FLAG` (`node scripts/generate-forensics103.mjs` writes a local copy). Migration `0008_crypto104.sql` adds CRYPTO-104 the same way; its evidence is staged at build time from a private directory (see `docs/CRYPTO104.md`). Migration `0009_crypto105.sql` adds CRYPTO-105 the same way (see `docs/CRYPTO105.md`).
 
+## Timed scoring
+
+Two separate clocks:
+
+- **Global event clock** — `event_config` (migration `0010_timed_scoring.sql`): `event_start_at`, `event_end_at` (UTC epoch ms) and `timezone` (`Asia/Kolkata`, display only). It only answers "can this participant play now?". Before start, login/dashboard work but `POST /api/challenges/start|next` and `POST /api/submissions` return 403 `EVENT_NOT_STARTED`; from `event_end_at` onwards (server receipt time, end exclusive) they return 403 `EVENT_ENDED`. Progress and the leaderboard stay visible. A NULL end means LIVE with no end.
+- **Individual challenge clock** — `participant_challenges.started_at` is written once by the first start and never reset by refreshes, new tabs, re-login or reopening the challenge. The first accepted flag writes `solved_at`, `duration_seconds` and `awarded_points` in the same D1 transaction as a `SOLVE` row in `score_events`.
+
+`awarded = round(max_points - (max_points - min_points) * min(elapsed_minutes / decay_minutes, 1))`, never below `min_points`. Event time is never an input. Persisted points are never recalculated when challenge config changes. Leaderboard totals are `SUM(score_events.points)`, ranked by score, then solves, then earliest final solve, then participant ID.
+
+Provisional values (randomised once, stored in the migration):
+
+| Challenge | max | min | decay |
+|---|---|---|---|
+| WEB-101 | 150 | 75 | 45 min |
+| WEB-102 | 200 | 100 | 60 min |
+| CRYPTO-105 | 175 | 90 | 90 min |
+| FORENSICS-103 | 250 | 125 | 120 min |
+| CRYPTO-104 | 300 | 150 | 120 min |
+
+Code: `lib/scoring.ts` (pure `getEventState`, `isEventLive`, `getChallengeElapsed`, `calculateChallengeScore`), `lib/server/event-window.ts` (`requireEventLive`), `lib/server/leaderboard.ts`.
+
+Event window commands (local D1 only; times need an explicit offset):
+
+```sh
+npm run event:show:local
+npm run event:set:local -- --live 6
+npm run event:set:local -- --start 2026-10-12T10:00:00+05:30 --end 2026-10-12T16:00:00+05:30
+```
+
+Production: apply migrations, then e.g. `wrangler d1 execute DB --remote --command "UPDATE event_config SET event_start_at=<ms>, event_end_at=<ms>, updated_at=<ms> WHERE id=1"`.
+
 ## Local development
 
 Requirements: Node.js 22.13.0 or newer, npm, and Git.
@@ -100,7 +134,7 @@ npm run dev
 
 `npm run setup` applies the D1 migrations to the local database (the same one `npm run dev` uses) and then interactively creates a local participant. It asks for a username, an optional display name (defaults to the username), and a password with confirmation; the password is hidden while typed, must be 12+ characters and at most 72 UTF-8 bytes, and is stored only as a bcrypt hash through the same code as `participant:create:local`. The email (`<username>@local.ddc.invalid`) and participant ID (`LOCAL-…`) are generated. Setup never touches remote D1 and stops without changes if the username already exists; re-run it with a different username to add more local participants. To reset the local database, stop the dev server and delete `.wrangler/state/v3/d1` (this erases all local data), then run `npm run setup` again.
 
-Open `http://localhost:5173/login` and sign in with the username and password you just chose.
+Open `http://localhost:5173/login` and sign in with the username and password you just chose. The migrated event window starts on 12 Oct 2026, so starting challenges and submitting flags are blocked locally until you open a window, e.g. `npm run event:set:local -- --live 6`.
 
 `npm run db:migrate:local` only applies migrations. For scripted provisioning, pass JSON through standard input to `npm run participant:create:local`. The required fields are `username`, `email`, `password`, `displayName`, and `participantId`. Do not put passwords in shell history or commit them. To publish a local starting challenge, use `npm run challenge:add:local`; see [docs/PARTICIPANT_PLATFORM.md](docs/PARTICIPANT_PLATFORM.md) for the exact fields and production requirements.
 
@@ -111,6 +145,8 @@ npx tsc --noEmit --incremental false
 npm run build
 npm run lint
 node tests/participant.integration.mjs
+npm run test:scoring
+node tests/scoring.integration.mjs
 ```
 
 `npm start` runs the built Worker locally after `npm run build`. The included `wrangler.local.json` and D1 database ID are local development configuration, not production infrastructure.
@@ -134,9 +170,9 @@ Event registration is handled separately through [Unstop](https://unstop.com/hac
 ## Current status and next work
 
 - Add validators and environments for further challenges (progression already assigns any active, unsolved challenge).
-- Add scoring, hints, penalties, and leaderboard calculations.
+- Add hints (as negative HINT rows in `score_events`) and rebalance the provisional point values after blind testing.
 - Add organizer/admin tooling and approved production account provisioning.
-- Confirm event end time and configure production D1/Cloudflare deployment.
+- Confirm the event start/end and set them in production `event_config`; configure production D1/Cloudflare deployment.
 - Load-test production asset delivery and participant APIs before the event.
 
 ## Registration CTA source

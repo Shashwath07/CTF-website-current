@@ -1,4 +1,5 @@
 import '../scripts/sites-env.mjs';
+import {openEventWindow} from './event-fixture.mjs';
 import assert from 'node:assert/strict';
 import {randomUUID,randomBytes,createHash} from 'node:crypto';
 import {readFileSync,writeFileSync,mkdtempSync,rmSync,rmdirSync} from 'node:fs';
@@ -19,6 +20,8 @@ const check=(x,m)=>{assert.ok(x,m);checks++;};
 async function req(path,cookie='',method='GET',body,origin=base){return fetch(base+path,{method,redirect:'manual',headers:{Origin:origin,Cookie:cookie,...(body?{'Content-Type':'application/json'}:{})},body:body?JSON.stringify(body):undefined});}
 async function data(path,cookie,method='GET',body){const r=await req(path,cookie,method,body);assert.equal(r.status,200);return r.json();}
 const delay=()=>new Promise(r=>setTimeout(r,2100));
+// Start/submit require a LIVE event window; restore the previous window afterwards.
+const restoreEvent=openEventWindow();
 try{
  const hash=await bcrypt.hash(password,12);
  sql([key,key+'-random'].map(id=>`INSERT INTO users(id,username,email,password_hash,display_name,participant_id,role,created_at) VALUES(${[id,id,id+'@example.test',hash,'Progress QA',id,'participant'].map(q).join(',')},${Date.now()});`).join(''));
@@ -102,6 +105,7 @@ try{
  check(errors.length===0,'No browser runtime errors: '+errors.join(';'));
  console.log(JSON.stringify({passed:checks}));
 }finally{
+ restoreEvent();
  await browser?.close();
  sql([key,key+'-random'].map(id=>`DELETE FROM submissions WHERE user_id=${q(id)};DELETE FROM submission_limits WHERE user_id=${q(id)};DELETE FROM web101_progress WHERE user_id=${q(id)};DELETE FROM web102_progress WHERE user_id=${q(id)};DELETE FROM sessions WHERE user_id=${q(id)};DELETE FROM participant_challenges WHERE user_id=${q(id)};DELETE FROM users WHERE id=${q(id)};DELETE FROM auth_limits WHERE key=${q('account:'+createHash('sha256').update(id).digest('hex'))};`).join('')+`DELETE FROM challenges WHERE id=${q(key)};`);
  rmSync(file,{force:true});rmdirSync(dir);

@@ -1,4 +1,5 @@
 import '../scripts/sites-env.mjs';
+import {openEventWindow} from './event-fixture.mjs';
 import assert from 'node:assert/strict';
 import { randomUUID, randomBytes, createHash } from 'node:crypto';
 import { readFileSync, writeFileSync, mkdtempSync, rmSync, rmdirSync, readdirSync, existsSync } from 'node:fs';
@@ -41,6 +42,8 @@ async function data(path,cookie,method='GET',body){const r=await request(path,co
 const delay = () => new Promise(r => setTimeout(r, 2100));
 const evidence = '/api/challenge-env/crypto-104/evidence';
 let browser;
+// Start/submit require a LIVE event window; restore the previous window afterwards.
+const restoreEvent=openEventWindow();
 try {
   const hash = await bcrypt.hash(password,12);
   // The main user has solved the other three challenges, so NEXT must reach CRYPTO-104 through normal progression.
@@ -162,6 +165,7 @@ try {
   console.log(JSON.stringify({passed:checks}));
   }
 } finally {
+ restoreEvent();
   await browser?.close();
   sql(ids.map(id=>`DELETE FROM submissions WHERE user_id=${q(id)};DELETE FROM submission_limits WHERE user_id=${q(id)};DELETE FROM sessions WHERE user_id=${q(id)};DELETE FROM participant_challenges WHERE user_id=${q(id)};DELETE FROM users WHERE id=${q(id)};DELETE FROM auth_limits WHERE key=${q('account:'+createHash('sha256').update(id).digest('hex'))};`).join(''));
   rmSync(file,{force:true});rmdirSync(dir);

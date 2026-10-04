@@ -1,12 +1,13 @@
 import "server-only";
-export class ApiError extends Error { constructor(public status:number,message:string) {super(message);} }
+// `code` is a stable machine-readable reason (e.g. EVENT_NOT_STARTED) returned alongside the message.
+export class ApiError extends Error { constructor(public status:number,message:string,public code?:string) {super(message);} }
 export function json(data:unknown,status=200,extra:HeadersInit={}) {
  const headers=new Headers(extra);headers.set("Cache-Control","no-store, private");headers.set("Vary","Cookie");
  return Response.json(data,{status,headers});
 }
 export async function api(work:()=>Promise<Response>) {
  try { return await work(); } catch(error) {
-  if(error instanceof ApiError) return json({error:error.message},error.status);
+  if(error instanceof ApiError) return json({error:error.message,...(error.code?{code:error.code}:{})},error.status);
   console.error("Participant request failed",error instanceof Error ? error.name : "UnknownError");
   return json({error:"The platform is temporarily unavailable. Please try again."},503);
  }

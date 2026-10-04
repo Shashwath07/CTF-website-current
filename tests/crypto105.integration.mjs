@@ -1,4 +1,5 @@
 import '../scripts/sites-env.mjs';
+import {openEventWindow} from './event-fixture.mjs';
 import assert from 'node:assert/strict';
 import { randomUUID, randomBytes, createHash } from 'node:crypto';
 import { readFileSync, writeFileSync, mkdtempSync, rmSync, rmdirSync, readdirSync, existsSync } from 'node:fs';
@@ -45,6 +46,8 @@ const delay = () => new Promise(r => setTimeout(r, 2100));
 const evidence = '/api/challenge-env/crypto-105/evidence';
 const earlier = ['WEB-101','WEB-102','FORENSICS-103','CRYPTO-104'];
 let browser;
+// Start/submit require a LIVE event window; restore the previous window afterwards.
+const restoreEvent=openEventWindow();
 try {
   // Catalogue record from migration 0009: active, reached through NEXT rather than as a starting challenge.
   const [record] = query("SELECT id,challenge_code AS code,category,active,starting FROM challenges WHERE id='CRYPTO-105'");
@@ -152,6 +155,7 @@ try {
   console.log(JSON.stringify({passed:checks}));
   }
 } finally {
+ restoreEvent();
   await browser?.close();
   sql(ids.map(id=>`DELETE FROM submissions WHERE user_id=${q(id)};DELETE FROM submission_limits WHERE user_id=${q(id)};DELETE FROM sessions WHERE user_id=${q(id)};DELETE FROM participant_challenges WHERE user_id=${q(id)};DELETE FROM users WHERE id=${q(id)};DELETE FROM auth_limits WHERE key=${q('account:'+createHash('sha256').update(id).digest('hex'))};`).join(''));
   rmSync(file,{force:true});rmdirSync(dir);

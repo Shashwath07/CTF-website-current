@@ -1,0 +1,25 @@
+/* Event window, challenge timing and leaderboard. Reuses the participant palette from participant.css. */
+.arena-event-window dl{display:grid;gap:10px;margin:0 0 18px}
+.arena-event-window dl>div{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:baseline;gap:4px 12px;border-bottom:1px solid #ffffff12;padding-bottom:8px}
+.arena-event-window dt{font-size:10px;letter-spacing:2px;color:#a0a4a4}
+.arena-event-window dd{margin:0;font-size:13px;color:#dededb;white-space:nowrap}
+.arena-clock[data-event-state=LIVE] small{color:#ff6500;letter-spacing:2px}
+.arena-clock[data-event-state=ENDED] small{color:#ffa777}
+.arena-timing{display:flex;width:fit-content;max-width:100%;flex-wrap:wrap;gap:8px 22px;margin:14px 0;padding:12px 14px;border:1px solid #ffffff18;border-left:2px solid #ff6500;background:#03060699;font-size:12px}
+.arena-timing>div{display:flex;flex-direction:column;gap:5px;min-width:0}
+.arena-timing dt{font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:#8f9694}
+.arena-timing dd{margin:0;color:#dededb;white-space:nowrap}
+.arena-timing-state dd{color:#ff6500;letter-spacing:1px}
+.arena-timing[data-challenge-timing=SOLVED] .arena-timing-state dd{color:#bddebd}
+.arena-timing-bar{max-width:1200px}
+.arena-timing-bar .arena-timing{margin:0 0 18px}
+.arena-event-closed{color:#ffa777;font-size:13px;letter-spacing:1px}
+.arena-board{overflow-x:auto}
+.arena-board table{width:100%;border-collapse:collapse;text-align:left;font-size:13px}
+.arena-board th{font-weight:400;color:#929b96;text-transform:uppercase;font-size:11px;letter-spacing:1px}
+.arena-board th,.arena-board td{padding:16px 10px;border-bottom:1px solid #ffffff18;white-space:nowrap}
+.arena-board td small{display:block;color:#8f9694;font-size:11px;margin-top:5px}
+.arena-board td b{font-weight:400;color:#ff6500;font-size:16px}
+.arena-board time{color:#afb5b1;font-size:12px}
+.arena-board tr[aria-current] td{background:#ff590010}
+.arena-board tr[aria-current] td:first-child{box-shadow:inset 2px 0 #ff6500}

@@ -1,4 +1,5 @@
 import '../scripts/sites-env.mjs';
+import {openEventWindow} from './event-fixture.mjs';
 import assert from 'node:assert/strict';
 import {randomUUID,randomBytes,createHash} from 'node:crypto';
 import {readFileSync,writeFileSync,mkdtempSync,rmSync,rmdirSync,mkdirSync,readdirSync} from 'node:fs';
@@ -17,6 +18,8 @@ async function request(path,cookie='',method='GET',body){return fetch(base+path,
 const wait=()=>new Promise(resolve=>setTimeout(resolve,2100));
 let browser,checks=0;const check=(value,label)=>{assert.ok(value,label);checks++;};
 async function submit(cookie,submittedFlag,challengeId='WEB-101'){const response=await request('/api/submissions',cookie,'POST',{challengeId,flag:submittedFlag});const body=await response.json();check(!JSON.stringify(body).includes(flag),'Response does not leak flag');return {response,body};}
+// Start/submit require a LIVE event window; restore the previous window afterwards.
+const restoreEvent=openEventWindow();
 try{
  const hash=await bcrypt.hash(password,12);
  sql([key,key+'-other'].map(id=>`INSERT INTO users(id,username,email,password_hash,display_name,participant_id,role,created_at) VALUES(${[id,id,id+'@example.test',hash,'Submission QA',id,'participant'].map(q).join(',')},${Date.now()});`).join('')+`INSERT INTO participant_challenges(user_id,challenge_id,assigned_at,started_at) SELECT ${q(key)},id,${Date.now()},${Date.now()} FROM challenges WHERE challenge_code='WEB-101';`);
@@ -36,7 +39,7 @@ try{
  dashboard=await (await request('/api/dashboard',cookie)).json();const solvedAt=dashboard.completedChallenges[0].solvedAt;
  check(typeof solvedAt==='number'&&dashboard.solves===1,'Solve persists in dashboard');
  check(dashboard.recentActivity.some(a=>a.type==='Challenge solved'&&a.challengeCode==='WEB-101'),'Dashboard solved activity');
- check(dashboard.score===0&&dashboard.rank===null,'Scoring remains unchanged');
+ check(dashboard.score>0&&dashboard.score===dashboard.completedChallenges[0].awardedPoints&&typeof dashboard.rank==='number','Solve scored from persisted awarded points');
  await wait();
  const repeat=await submit(cookie,flag);check(repeat.body.correct&&repeat.body.alreadySolved&&repeat.body.message==='Challenge already solved.','Duplicate is idempotent');
  const again=await (await request('/api/dashboard',cookie)).json();check(again.assignedChallenge===null&&again.completedChallenges[0].solvedAt===solvedAt&&again.solves===1,'Duplicate preserves original solve');
@@ -63,5 +66,6 @@ try{
  function scan(directory){for(const entry of readdirSync(directory,{withFileTypes:true})){const path=join(directory,entry.name);if(entry.isDirectory())scan(path);else if(/\.(js|json|html|map)$/.test(path))assert.ok(!readFileSync(path,'utf8').includes(flag),'Flag in client build');}}
  scan('dist/client');check(true,'Client bundle excludes real flag');check(errors.length===0,'No browser runtime errors');console.log(JSON.stringify({passed:checks}));
 }finally{
+ restoreEvent();
  await browser?.close();sql([key,key+'-other'].map(id=>`DELETE FROM submissions WHERE user_id=${q(id)};DELETE FROM submission_limits WHERE user_id=${q(id)};DELETE FROM web101_progress WHERE user_id=${q(id)};DELETE FROM sessions WHERE user_id=${q(id)};DELETE FROM participant_challenges WHERE user_id=${q(id)};DELETE FROM users WHERE id=${q(id)};DELETE FROM auth_limits WHERE key=${q('account:'+createHash('sha256').update(id).digest('hex'))};`).join(''));rmSync(file,{force:true});rmdirSync(directory);
 }

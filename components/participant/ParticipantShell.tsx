@@ -6,6 +6,7 @@ import { UserRound, ChevronDown, LogOut } from "lucide-react";
 import type { Participant, EventInfo } from "@/lib/participant/types";
 import EventClock from "./EventClock";
 import "./participant.css";
+import "./timing.css";
 const AuthContext=createContext<{participant:Participant;event:EventInfo}|null>(null);
 export function useParticipant(){const value=useContext(AuthContext);if(!value)throw new Error('Participant shell required');return value;}
 const routes=[['Dashboard','/dashboard'],['Challenges','/challenges'],['Submissions','/submissions'],['Leaderboard','/leaderboard'],['Rules','/rules']];

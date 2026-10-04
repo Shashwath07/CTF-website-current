@@ -13,10 +13,12 @@ export const challenges = sqliteTable("challenges", {
  id: text("id").primaryKey(), challengeCode: text("challenge_code").notNull().unique(), title: text("title").notNull(),
  category: text("category").notNull(), difficulty: text("difficulty").notNull(), description: text("description").notNull(),
  active: integer("active").notNull().default(0), starting: integer("starting").notNull().default(0),
+ maxPoints: integer("max_points").notNull().default(100), minPoints: integer("min_points").notNull().default(50), decayMinutes: integer("decay_minutes").notNull().default(60),
 });
 export const participantChallenges = sqliteTable("participant_challenges", {
  userId: text("user_id").notNull().references(()=>users.id,{onDelete:"cascade"}), challengeId: text("challenge_id").notNull().references(()=>challenges.id),
  assignedAt: integer("assigned_at").notNull(), startedAt: integer("started_at").notNull(), solvedAt: integer("solved_at"),
+ durationSeconds: integer("duration_seconds"), awardedPoints: integer("awarded_points"),
 },t=>[primaryKey({columns:[t.userId,t.challengeId]}),uniqueIndex("participant_one_active").on(t.userId).where(sql`${t.solvedAt} IS NULL`)]);
 export const announcements = sqliteTable("announcements", { id:text("id").primaryKey(), body:text("body").notNull(), publishedAt:integer("published_at").notNull() });
 export const web101Progress = sqliteTable("web101_progress", {
@@ -35,3 +37,12 @@ export const submissionLimits = sqliteTable("submission_limits", {
  userId:text("user_id").primaryKey().references(()=>users.id,{onDelete:"cascade"}),nextAllowedAt:integer("next_allowed_at").notNull(),
 });
 export const authLimits = sqliteTable("auth_limits", { key:text("key").primaryKey(), attempts:integer("attempts").notNull(), resetsAt:integer("resets_at").notNull() },t=>[index("auth_limits_expiry").on(t.resetsAt)]);
+export const eventConfig = sqliteTable("event_config", {
+ id:integer("id").primaryKey(), eventStartAt:integer("event_start_at").notNull(), eventEndAt:integer("event_end_at"),
+ timezone:text("timezone").notNull().default("Asia/Kolkata"), updatedAt:integer("updated_at").notNull(),
+});
+export const scoreEvents = sqliteTable("score_events", {
+ id:text("id").primaryKey(), userId:text("user_id").notNull().references(()=>users.id,{onDelete:"cascade"}),
+ challengeId:text("challenge_id").notNull().references(()=>challenges.id), kind:text("kind",{enum:["SOLVE","HINT"]}).notNull(),
+ points:integer("points").notNull(), createdAt:integer("created_at").notNull(),
+},t=>[uniqueIndex("score_events_one_solve").on(t.userId,t.challengeId).where(sql`${t.kind}='SOLVE'`),index("score_events_user").on(t.userId,t.kind)]);

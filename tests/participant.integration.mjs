@@ -1,4 +1,5 @@
 import '../scripts/sites-env.mjs';
+import {openEventWindow} from './event-fixture.mjs';
 import assert from 'node:assert/strict';
 import {randomUUID,randomBytes,createHash} from 'node:crypto';
 import {writeFileSync,mkdtempSync,rmSync,rmdirSync,mkdirSync} from 'node:fs';
@@ -13,6 +14,8 @@ const q=s=>"'"+s.replaceAll("'","''")+"'";
 function sql(text){writeFileSync(sqlFile,text);const r=spawnSync(process.execPath,['node_modules/wrangler/bin/wrangler.js','d1','execute','DB','--config','wrangler.local.json','--local','--file',sqlFile],{encoding:'utf8'});if(r.status)throw new Error('Fixture database operation failed: '+r.stderr);}
 async function request(path,{cookie='',method='GET',body,origin=base}={}){return fetch(base+path,{method,redirect:'manual',headers:{Origin:origin,...(cookie?{Cookie:cookie}:{}),...(body?{'Content-Type':'application/json'}:{})},body:body?JSON.stringify(body):undefined});}
 let browser;let tested=0;const check=(value,message)=>{assert.ok(value,message);tested++;};
+// Start/submit require a LIVE event window; restore the previous window afterwards.
+const restoreEvent=openEventWindow();
 try{
  const hash=await bcrypt.hash(password,12);
  sql(`INSERT INTO users(id,username,email,password_hash,display_name,participant_id,role,created_at) VALUES(${[key,key,key+'@example.test',hash,'TEST PARTICIPANT','QA-'+key.slice(-6),'participant'].map(q).join(',')},${Date.now()});`+[0,1].map(i=>`INSERT INTO challenges(id,challenge_code,title,category,difficulty,description,active,starting) VALUES(${q(key+'-'+i)},${q('QA-'+i+'-'+key)},'Verification challenge','${i?'CRYPTO':'WEB'}','EASY','Temporary verification fixture. Removed after testing.',1,1);`).join(''));
@@ -41,7 +44,8 @@ try{
  await page.locator('.arena-profile summary').click();await page.getByRole('button',{name:'Log out',exact:true}).click();await page.waitForURL('**/login');await page.goto(base+'/dashboard');await page.waitForURL('**/login');check(true,'Browser logout and route guard');
  await page.setViewportSize({width:1672,height:941});await page.goto(base+'/');await page.locator('#challenge-vectors').waitFor({state:'attached'});check(await page.locator('#event-highlights').count()===1,'Public Pages 01–03 still render');check(await page.locator('a[href="https://unstop.com/hackathons/cryptx-chaitanya-bharathi-institute-of-technology-cbit-hyderabad-1761452"]').count()>0,'Registration unchanged');
  check(errors.length===0,'No browser runtime errors: '+errors.join('; '));console.log(JSON.stringify({passed:tested,desktop:'outputs/participant-desktop.png',mobile:'outputs/participant-mobile.png'}));
-}finally{await browser?.close();sql(`DELETE FROM auth_limits WHERE key IN (${q('account:'+createHash('sha256').update(key).digest('hex'))},${q('account:'+createHash('sha256').update(key+'unknown').digest('hex'))});DELETE FROM sessions WHERE user_id=${q(userId)};DELETE FROM participant_challenges WHERE user_id=${q(userId)};DELETE FROM users WHERE id=${q(userId)};DELETE FROM challenges WHERE id IN (${q(key+'-0')},${q(key+'-1')});`);rmSync(sqlFile,{force:true});rmdirSync(dir);}
+}finally{
+ restoreEvent();await browser?.close();sql(`DELETE FROM auth_limits WHERE key IN (${q('account:'+createHash('sha256').update(key).digest('hex'))},${q('account:'+createHash('sha256').update(key+'unknown').digest('hex'))});DELETE FROM sessions WHERE user_id=${q(userId)};DELETE FROM participant_challenges WHERE user_id=${q(userId)};DELETE FROM users WHERE id=${q(userId)};DELETE FROM challenges WHERE id IN (${q(key+'-0')},${q(key+'-1')});`);rmSync(sqlFile,{force:true});rmdirSync(dir);}
 
 
 
